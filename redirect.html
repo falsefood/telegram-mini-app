@@ -43,6 +43,16 @@
             color: var(--tg-theme-destructive-text-color, #ff3b30);
             margin: 10px 0;
         }
+        .debug {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #999999);
+            margin-top: 20px;
+            text-align: left;
+            word-break: break-all;
+            max-width: 100%;
+            padding: 10px;
+            display: none;
+        }
         .button {
             background-color: var(--tg-theme-button-color, #3390ec);
             color: var(--tg-theme-button-text-color, #ffffff);
@@ -66,6 +76,7 @@
     <div id="statusMessage" class="message">Checking access...</div>
     <div id="errorMessage" class="error hidden"></div>
     <a href="#" id="subscribeButton" class="button">Get Subscription</a>
+    <pre id="debugInfo" class="debug"></pre>
 
     <script>
         // Initialize Telegram WebApp
@@ -79,25 +90,46 @@
             return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
         }
 
+        // Function to show debug info
+        function showDebug(info) {
+            const debugElement = document.getElementById('debugInfo');
+            debugElement.textContent = JSON.stringify(info, null, 2);
+            debugElement.style.display = 'block';
+        }
+
         // Function to show error message
-        function showError(message, debug = '') {
+        function showError(message, debug = null) {
             document.querySelector('.loader').style.display = 'none';
             document.getElementById('statusMessage').style.display = 'none';
             document.getElementById('errorMessage').textContent = message;
-            if (debug) {
-                console.log('Debug info:', debug);
-            }
             document.getElementById('errorMessage').classList.remove('hidden');
             document.getElementById('subscribeButton').style.display = 'inline-block';
+            
+            if (debug) {
+                showDebug(debug);
+            }
         }
 
         // Function to check subscription status
         function checkAccess() {
             try {
-                console.log('Checking access...');
-                console.log('WebApp ready state:', tg.isInitialized);
-                console.log('Current URL:', window.location.href);
-                
+                const debugMode = getUrlParameter('debug') === '1';
+                const debugInfo = {
+                    url: window.location.href,
+                    webAppReady: tg.isInitialized,
+                    platform: tg.platform,
+                    version: tg.version,
+                    params: {
+                        access: getUrlParameter('access'),
+                        debug: debugMode
+                    }
+                };
+
+                console.log('Debug info:', debugInfo);
+                if (debugMode) {
+                    showDebug(debugInfo);
+                }
+
                 // Get subscription status from URL parameters
                 const hasAccess = getUrlParameter('access');
                 console.log('Access parameter:', hasAccess);
@@ -124,7 +156,12 @@
 
             } catch (error) {
                 console.error('Error:', error);
-                showError('Error checking access: ' + error.message);
+                showError('Error checking access: ' + error.message, {
+                    error: error.message,
+                    stack: error.stack,
+                    webAppReady: tg.isInitialized,
+                    url: window.location.href
+                });
             }
         }
 

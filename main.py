@@ -84,11 +84,19 @@ def get_remaining_time(user_id):
 async def setup_menu_button(bot, chat_id=None, is_paid=False):
     """Setup the menu button with the appropriate URL based on payment status."""
     try:
+        # Double check subscription status
+        if chat_id:
+            subscription = db.get_subscription(chat_id)
+            is_paid = db.is_subscription_active(chat_id)
+            logger.info(f"User {chat_id} subscription status: {is_paid}")
+            if subscription:
+                logger.info(f"Subscription details: plan={subscription['plan_id']}, expires={subscription['expiry_date']}")
+
         # Base URL for the redirect page
         base_url = "https://falsefood.github.io/telegram-mini-app/redirect.html"
         
-        # Add subscription status as access parameter
-        url = f"{base_url}?access={'true' if is_paid else 'false'}"
+        # Add subscription status and debug info as parameters
+        url = f"{base_url}?access={'true' if is_paid else 'false'}&debug=1"
         
         logger.info(f"Setting up menu button for chat_id {chat_id} with URL: {url}")
         
@@ -103,136 +111,138 @@ async def setup_menu_button(bot, chat_id=None, is_paid=False):
         
     except Exception as e:
         logger.error(f"Error setting up menu button: {e}")
-        # Try to set up a basic menu button without parameters
-        try:
-            await bot.set_chat_menu_button(
-                chat_id=chat_id,
-                menu_button=MenuButtonWebApp(
-                    text="Open App",
-                    web_app=WebAppInfo(url=base_url)
-                )
-            )
-        except Exception as e2:
-            logger.error(f"Error setting up fallback menu button: {e2}")
+        raise  # Re-raise the exception to see it in logs
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
-    # Delete previous messages if they exist
     try:
-        # Try to delete the message that triggered the command
-        await update.message.delete()
-    except Exception as e:
-        logger.debug(f"Could not delete trigger message: {e}")
-
-    user_id = update.effective_user.id
-    subscription = db.get_subscription(user_id)
-    is_paid = is_subscription_active(user_id)
-    
-    # Setup menu button with appropriate URL
-    await setup_menu_button(context.bot, update.effective_chat.id, is_paid)
-    
-    keyboard = []
-    
-    if subscription:
-        # User has or had a subscription - show text only
-        if is_paid:
-            # Active subscription
-            current_plan = subscription["plan_id"]
-            days_left = get_remaining_time(user_id)
-            
-            # Only show upgrade button if not on the highest plan
-            if current_plan != "pro":
-                keyboard.append([
-                    InlineKeyboardButton("⬆️ Upgrade Plan", callback_data="upgrade_subscription")
-                ])
-            
-            keyboard.append([
-                InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
-            ])
-            keyboard.append([
-                InlineKeyboardButton(f"📅 {days_left} remaining", callback_data="profile")
-            ])
-            
-            caption_text = (
-                "🎉 *Welcome to our service\\!*\n\n"
-                "Your subscription is active\\.\n"
-                f"*Current Plan:* {SUBSCRIPTION_PLANS[current_plan]['name']}\n"
-                f"*Time Left:* {days_left}"
-            )
-            
-            # Send text message for active subscription
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=caption_text,
-                parse_mode="MarkdownV2",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        else:
-            # Expired subscription
-            last_plan = subscription["plan_id"]
-            keyboard.append([
-                InlineKeyboardButton("🔄 Renew Subscription", callback_data="subscriptions")
-            ])
-            
-            # Get last payment info
-            payment_history = db.get_payment_history(user_id)
-            last_payment = payment_history[0] if payment_history else None
-            last_payment_date = (
-                datetime.fromtimestamp(last_payment["payment_time"]).strftime("%Y\\-%m\\-%d")
-                if last_payment else "N/A"
-            )
-            
-            caption_text = (
-                "⚠️ *Subscription Expired*\n\n"
-                f"*Previous Plan:* {SUBSCRIPTION_PLANS[last_plan]['name']}\n"
-                f"*Last Payment:* {last_payment_date}\n\n"
-                "To continue using our service, please renew your subscription\\."
-            )
-            
-            # Send text message for expired subscription
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=caption_text,
-                parse_mode="MarkdownV2",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-    else:
-        # No subscription history - new user, show video
-        keyboard = [[
-            InlineKeyboardButton("💳 Subscribe Now", callback_data="subscriptions")
-        ]]
-        caption_text = "🎉 *Welcome to our service\\!*\n\nClick the button below to view available subscription plans:"
-        
-        # Try to send welcome video for new users only
+        # Delete previous messages if they exist
         try:
-            if os.path.exists(WELCOME_VIDEO):
-                with open(WELCOME_VIDEO, 'rb') as video:
-                    await context.bot.send_video(
-                        chat_id=update.effective_chat.id,
-                        video=video,
-                        caption=caption_text,
-                        parse_mode="MarkdownV2",
-                        reply_markup=InlineKeyboardMarkup(keyboard),
-                        supports_streaming=True,
-                        width=1920,
-                        height=1080
-                    )
-            else:
-                logger.warning(f"Welcome video not found at path: {WELCOME_VIDEO}")
+            await update.message.delete()
+        except Exception as e:
+            logger.debug(f"Could not delete trigger message: {e}")
+
+        user_id = update.effective_user.id
+        subscription = db.get_subscription(user_id)
+        is_paid = db.is_subscription_active(user_id)
+        
+        # Log subscription status
+        logger.info(f"User {user_id} subscription status: {is_paid}")
+        if subscription:
+            logger.info(f"Subscription details: plan={subscription['plan_id']}, expires={subscription['expiry_date']}")
+        
+        # Setup menu button with appropriate URL
+        await setup_menu_button(context.bot, update.effective_chat.id, is_paid)
+        
+        keyboard = []
+        
+        if subscription:
+            # User has or had a subscription - show text only
+            if is_paid:
+                # Active subscription
+                current_plan = subscription["plan_id"]
+                days_left = get_remaining_time(user_id)
+                
+                # Only show upgrade button if not on the highest plan
+                if current_plan != "pro":
+                    keyboard.append([
+                        InlineKeyboardButton("⬆️ Upgrade Plan", callback_data="upgrade_subscription")
+                    ])
+                
+                keyboard.append([
+                    InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
+                ])
+                keyboard.append([
+                    InlineKeyboardButton(f"📅 {days_left} remaining", callback_data="profile")
+                ])
+                
+                caption_text = (
+                    "🎉 *Welcome to our service\\!*\n\n"
+                    "Your subscription is active\\.\n"
+                    f"*Current Plan:* {SUBSCRIPTION_PLANS[current_plan]['name']}\n"
+                    f"*Time Left:* {days_left}"
+                )
+                
+                # Send text message for active subscription
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text=caption_text,
                     parse_mode="MarkdownV2",
                     reply_markup=InlineKeyboardMarkup(keyboard)
                 )
-        except Exception as e:
-            logger.error(f"Error sending welcome message: {e}")
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=caption_text,
-                parse_mode="MarkdownV2",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+            else:
+                # Expired subscription
+                last_plan = subscription["plan_id"]
+                keyboard.append([
+                    InlineKeyboardButton("🔄 Renew Subscription", callback_data="subscriptions")
+                ])
+                
+                # Get last payment info
+                payment_history = db.get_payment_history(user_id)
+                last_payment = payment_history[0] if payment_history else None
+                last_payment_date = (
+                    datetime.fromtimestamp(last_payment["payment_time"]).strftime("%Y\\-%m\\-%d")
+                    if last_payment else "N/A"
+                )
+                
+                caption_text = (
+                    "⚠️ *Subscription Expired*\n\n"
+                    f"*Previous Plan:* {SUBSCRIPTION_PLANS[last_plan]['name']}\n"
+                    f"*Last Payment:* {last_payment_date}\n\n"
+                    "To continue using our service, please renew your subscription\\."
+                )
+                
+                # Send text message for expired subscription
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=caption_text,
+                    parse_mode="MarkdownV2",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+        else:
+            # No subscription history - new user, show video
+            keyboard = [[
+                InlineKeyboardButton("💳 Subscribe Now", callback_data="subscriptions")
+            ]]
+            caption_text = "🎉 *Welcome to our service\\!*\n\nClick the button below to view available subscription plans:"
+            
+            # Try to send welcome video for new users only
+            try:
+                if os.path.exists(WELCOME_VIDEO):
+                    with open(WELCOME_VIDEO, 'rb') as video:
+                        await context.bot.send_video(
+                            chat_id=update.effective_chat.id,
+                            video=video,
+                            caption=caption_text,
+                            parse_mode="MarkdownV2",
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                            supports_streaming=True,
+                            width=1920,
+                            height=1080
+                        )
+                else:
+                    logger.warning(f"Welcome video not found at path: {WELCOME_VIDEO}")
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=caption_text,
+                        parse_mode="MarkdownV2",
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+            except Exception as e:
+                logger.error(f"Error sending welcome message: {e}")
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=caption_text,
+                    parse_mode="MarkdownV2",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+    except Exception as e:
+        logger.error(f"Error in start command: {e}")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Sorry, there was an error processing your request. Please try again later.",
+            parse_mode="MarkdownV2"
+        )
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button clicks."""
