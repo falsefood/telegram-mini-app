@@ -68,21 +68,42 @@
     <a href="#" id="subscribeButton" class="button">Get Subscription</a>
 
     <script>
+        // Initialize Telegram WebApp
         let tg = window.Telegram.WebApp;
-        tg.expand();
-        
-        // Function to check subscription status from initData
+
+        // Function to parse URL parameters
+        function getUrlParameter(name) {
+            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+            var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+            var results = regex.exec(location.search);
+            return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+        }
+
+        // Function to show error message
+        function showError(message) {
+            document.querySelector('.loader').style.display = 'none';
+            document.getElementById('statusMessage').style.display = 'none';
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorMessage').classList.remove('hidden');
+            document.getElementById('subscribeButton').style.display = 'inline-block';
+        }
+
+        // Function to check subscription status
         function checkSubscription() {
             try {
-                // Get subscription data from initData
-                const startParam = tg.initDataUnsafe.start_param;
-                
-                if (!startParam) {
-                    throw new Error('No subscription data available');
+                // Wait for WebApp to be ready
+                if (!tg.initDataUnsafe || !tg.initDataUnsafe.user) {
+                    showError('WebApp initialization error. Please try again.');
+                    console.log('Init data:', tg.initData);
+                    console.log('Init data unsafe:', tg.initDataUnsafe);
+                    return;
                 }
-                
-                // The start_param will be 'subscribed' if user has access
-                if (startParam === 'subscribed') {
+
+                // Get subscription status from URL parameters
+                const hasAccess = getUrlParameter('access') === 'true';
+                console.log('Access parameter:', hasAccess);
+
+                if (hasAccess) {
                     // User has active subscription - redirect to main app
                     window.location.href = 'https://falsefood.github.io/telegram-mini-app/';
                 } else {
@@ -91,26 +112,30 @@
                     document.getElementById('statusMessage').textContent = 
                         'Subscription required to access this content';
                     document.getElementById('subscribeButton').style.display = 'inline-block';
-                    
-                    // Add click handler for subscribe button
-                    document.getElementById('subscribeButton').addEventListener('click', (e) => {
-                        e.preventDefault();
-                        tg.sendData('request_subscription');
-                        tg.close();
-                    });
                 }
+
+                // Add click handler for subscribe button
+                document.getElementById('subscribeButton').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    tg.sendData('request_subscription');
+                    tg.close();
+                });
+
             } catch (error) {
                 console.error('Error:', error);
-                document.querySelector('.loader').style.display = 'none';
-                document.getElementById('statusMessage').style.display = 'none';
-                document.getElementById('errorMessage').textContent = 
-                    'Unable to verify subscription status. Please try again later.';
-                document.getElementById('errorMessage').classList.remove('hidden');
+                showError('Error checking subscription status: ' + error.message);
             }
         }
 
-        // Start checking when page loads
-        document.addEventListener('DOMContentLoaded', checkSubscription);
+        // Ensure WebApp is ready before checking subscription
+        tg.ready();
+        tg.expand();
+
+        // Start checking when page loads and WebApp is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add a small delay to ensure WebApp is fully initialized
+            setTimeout(checkSubscription, 500);
+        });
     </script>
 </body>
 </html> 

@@ -86,8 +86,8 @@ async def setup_menu_button(bot, chat_id=None, is_paid=False):
     # Base URL for the redirect page
     base_url = "https://falsefood.github.io/telegram-mini-app/redirect.html"
     
-    # Add subscription status as start parameter
-    url = f"{base_url}?start_param={'subscribed' if is_paid else 'not_subscribed'}"
+    # Add subscription status as access parameter
+    url = f"{base_url}?access={'true' if is_paid else 'false'}"
     
     await bot.set_chat_menu_button(
         chat_id=chat_id,
