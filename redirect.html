@@ -80,39 +80,40 @@
         }
 
         // Function to show error message
-        function showError(message) {
+        function showError(message, debug = '') {
             document.querySelector('.loader').style.display = 'none';
             document.getElementById('statusMessage').style.display = 'none';
             document.getElementById('errorMessage').textContent = message;
+            if (debug) {
+                console.log('Debug info:', debug);
+            }
             document.getElementById('errorMessage').classList.remove('hidden');
             document.getElementById('subscribeButton').style.display = 'inline-block';
         }
 
         // Function to check subscription status
-        function checkSubscription() {
+        function checkAccess() {
             try {
-                // Wait for WebApp to be ready
-                if (!tg.initDataUnsafe || !tg.initDataUnsafe.user) {
-                    showError('WebApp initialization error. Please try again.');
-                    console.log('Init data:', tg.initData);
-                    console.log('Init data unsafe:', tg.initDataUnsafe);
+                console.log('Checking access...');
+                console.log('WebApp ready state:', tg.isInitialized);
+                console.log('Current URL:', window.location.href);
+                
+                // Get subscription status from URL parameters
+                const hasAccess = getUrlParameter('access');
+                console.log('Access parameter:', hasAccess);
+
+                // Direct access to main app if access is true
+                if (hasAccess === 'true') {
+                    console.log('Access granted, redirecting...');
+                    window.location.href = 'https://falsefood.github.io/telegram-mini-app/';
                     return;
                 }
 
-                // Get subscription status from URL parameters
-                const hasAccess = getUrlParameter('access') === 'true';
-                console.log('Access parameter:', hasAccess);
-
-                if (hasAccess) {
-                    // User has active subscription - redirect to main app
-                    window.location.href = 'https://falsefood.github.io/telegram-mini-app/';
-                } else {
-                    // Show subscription required message
-                    document.querySelector('.loader').style.display = 'none';
-                    document.getElementById('statusMessage').textContent = 
-                        'Subscription required to access this content';
-                    document.getElementById('subscribeButton').style.display = 'inline-block';
-                }
+                // Show subscription required message
+                document.querySelector('.loader').style.display = 'none';
+                document.getElementById('statusMessage').textContent = 
+                    'Subscription required to access this content';
+                document.getElementById('subscribeButton').style.display = 'inline-block';
 
                 // Add click handler for subscribe button
                 document.getElementById('subscribeButton').addEventListener('click', (e) => {
@@ -123,19 +124,40 @@
 
             } catch (error) {
                 console.error('Error:', error);
-                showError('Error checking subscription status: ' + error.message);
+                showError('Error checking access: ' + error.message);
             }
         }
 
-        // Ensure WebApp is ready before checking subscription
-        tg.ready();
-        tg.expand();
+        // Main initialization
+        function init() {
+            console.log('Initializing...');
+            
+            try {
+                // Expand the WebApp
+                tg.expand();
+                
+                // Check if WebApp is ready
+                if (tg.isInitialized) {
+                    console.log('WebApp is initialized');
+                    checkAccess();
+                } else {
+                    console.log('WebApp not initialized, waiting...');
+                    // Wait for WebApp to be ready
+                    tg.ready();
+                    setTimeout(checkAccess, 100);
+                }
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showError('Initialization error', {
+                    error: error.message,
+                    webApp: tg,
+                    isInitialized: tg.isInitialized
+                });
+            }
+        }
 
-        // Start checking when page loads and WebApp is ready
-        document.addEventListener('DOMContentLoaded', () => {
-            // Add a small delay to ensure WebApp is fully initialized
-            setTimeout(checkSubscription, 500);
-        });
+        // Start initialization when page loads
+        document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html> 

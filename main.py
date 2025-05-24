@@ -83,19 +83,37 @@ def get_remaining_time(user_id):
 
 async def setup_menu_button(bot, chat_id=None, is_paid=False):
     """Setup the menu button with the appropriate URL based on payment status."""
-    # Base URL for the redirect page
-    base_url = "https://falsefood.github.io/telegram-mini-app/redirect.html"
-    
-    # Add subscription status as access parameter
-    url = f"{base_url}?access={'true' if is_paid else 'false'}"
-    
-    await bot.set_chat_menu_button(
-        chat_id=chat_id,
-        menu_button=MenuButtonWebApp(
-            text="Open App",
-            web_app=WebAppInfo(url=url)
+    try:
+        # Base URL for the redirect page
+        base_url = "https://falsefood.github.io/telegram-mini-app/redirect.html"
+        
+        # Add subscription status as access parameter
+        url = f"{base_url}?access={'true' if is_paid else 'false'}"
+        
+        logger.info(f"Setting up menu button for chat_id {chat_id} with URL: {url}")
+        
+        await bot.set_chat_menu_button(
+            chat_id=chat_id,
+            menu_button=MenuButtonWebApp(
+                text="Open App",
+                web_app=WebAppInfo(url=url)
+            )
         )
-    )
+        logger.info("Menu button setup successful")
+        
+    except Exception as e:
+        logger.error(f"Error setting up menu button: {e}")
+        # Try to set up a basic menu button without parameters
+        try:
+            await bot.set_chat_menu_button(
+                chat_id=chat_id,
+                menu_button=MenuButtonWebApp(
+                    text="Open App",
+                    web_app=WebAppInfo(url=base_url)
+                )
+            )
+        except Exception as e2:
+            logger.error(f"Error setting up fallback menu button: {e2}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
