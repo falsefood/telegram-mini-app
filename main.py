@@ -278,18 +278,37 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.callback_query.answer()
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin command to view database contents."""
+    """Admin command to view and manage database contents."""
     user_id = update.effective_user.id
     
     if user_id not in ADMIN_IDS:
         await update.message.reply_text("⛔️ You are not authorized to use admin commands.")
         return
+
+    # Check if there are any command arguments
+    if context.args:
+        if context.args[0] == "delete" and len(context.args) > 1:
+            try:
+                user_to_delete = int(context.args[1])
+                # Delete user's subscription
+                with sqlite3.connect(db.db_file) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM subscriptions WHERE user_id = ?", (user_to_delete,))
+                    conn.commit()
+                await update.message.reply_text(f"✅ User {user_to_delete} has been removed from subscriptions.")
+                return
+            except ValueError:
+                await update.message.reply_text("❌ Invalid user ID. Please provide a valid number.")
+                return
+            except sqlite3.Error as e:
+                await update.message.reply_text(f"❌ Database error: {str(e)}")
+                return
     
     # Get all subscriptions
     with sqlite3.connect(db.db_file) as conn:
         cursor = conn.cursor()
         
-        # Get subscriptions
+        # Get subscriptions with user info from context
         cursor.execute("SELECT * FROM subscriptions")
         subscriptions = cursor.fetchall()
         
@@ -299,29 +318,56 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         
         # Create subscription table
         sub_table = PrettyTable()
-        sub_table.field_names = ["User ID", "Plan", "Purchase Date", "Expiry Date", "Status"]
+        sub_table.field_names = ["User ID", "Username", "Name", "Plan", "Purchase Date", "Expiry Date", "Status"]
         
         for sub in subscriptions:
+            user_id = sub[0]
+            try:
+                # Try to get user info from Telegram
+                user = await context.bot.get_chat(user_id)
+                username = user.username or "N/A"
+                name = user.first_name
+                if user.last_name:
+                    name += f" {user.last_name}"
+            except:
+                username = "N/A"
+                name = "Unknown"
+            
             purchase_date = datetime.fromtimestamp(sub[2]).strftime("%Y-%m-%d")
             expiry_date = datetime.fromtimestamp(sub[3]).strftime("%Y-%m-%d")
             is_active = "Active ✅" if sub[3] > datetime.now().timestamp() else "Expired ❌"
-            sub_table.add_row([sub[0], sub[1], purchase_date, expiry_date, is_active])
+            sub_table.add_row([user_id, username, name, sub[1], purchase_date, expiry_date, is_active])
         
         # Create payments table
         pay_table = PrettyTable()
-        pay_table.field_names = ["ID", "User ID", "Plan", "Amount", "Currency", "Date"]
+        pay_table.field_names = ["ID", "User ID", "Username", "Plan", "Amount", "Currency", "Date"]
         
         for payment in payments:
+            user_id = payment[1]
+            try:
+                user = await context.bot.get_chat(user_id)
+                username = user.username or "N/A"
+            except:
+                username = "N/A"
+            
             payment_date = datetime.fromtimestamp(payment[5]).strftime("%Y-%m-%d")
             pay_table.add_row([
-                payment[0], payment[1], payment[2],
+                payment[0], user_id, username, payment[2],
                 payment[3], payment[4], payment_date
             ])
         
-        # Send tables
+        # Send tables and instructions
+        help_text = (
+            "*Admin Commands:*\n"
+            "• `/admin` \\- View all data\n"
+            "• `/admin delete USER_ID` \\- Remove user's subscription\n"
+            "\n"
+            "*Current Data:*\n"
+        )
+        
         await update.message.reply_text(
-            "*📊 Database Contents*\n\n"
-            "*Active Subscriptions:*\n"
+            help_text + 
+            "\n*Active Subscriptions:*\n"
             f"```\n{sub_table}\n```\n\n"
             "*Payment History:*\n"
             f"```\n{pay_table}\n```",
