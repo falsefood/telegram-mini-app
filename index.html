@@ -2,9 +2,14 @@
 <html>
 <head>
     <title>Redirecting to Mini App</title>
-    <meta http-equiv="refresh" content="0; url=redirect.html">
+    <script>
+        // Get current URL parameters
+        const currentParams = window.location.search;
+        // Redirect to redirect.html with the same parameters
+        window.location.href = 'redirect.html' + currentParams;
+    </script>
 </head>
 <body>
-    <p>Redirecting to <a href="redirect.html">redirect.html</a>...</p>
+    <p>Redirecting...</p>
 </body>
 </html> 
