@@ -1,192 +1,170 @@
 import sqlite3
-from datetime import datetime
 import logging
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self, db_file="bot_database.db"):
-        self.db_file = db_file
-        self.init_db()
+    def __init__(self):
+        self.db_file = "bot_database.db"
+        self._init_db()
 
-    def init_db(self):
-        """Initialize database and create tables if they don't exist."""
+    def _init_db(self):
+        """Initialize database with proper schema."""
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
                 
-                # Create subscriptions table
-                cursor.execute('''
+                # Create subscriptions table with consistent column names
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS subscriptions (
                         user_id INTEGER PRIMARY KEY,
                         plan_id TEXT NOT NULL,
-                        purchase_time REAL NOT NULL,
-                        expiration_time REAL NOT NULL,
+                        start_date INTEGER NOT NULL,
+                        expiry_date INTEGER NOT NULL,
                         notified INTEGER DEFAULT 0
                     )
-                ''')
+                """)
                 
-                # Create payments history table
-                cursor.execute('''
+                # Create payments table
+                cursor.execute("""
                     CREATE TABLE IF NOT EXISTS payments (
-                        payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
                         user_id INTEGER NOT NULL,
                         plan_id TEXT NOT NULL,
                         amount REAL NOT NULL,
                         currency TEXT NOT NULL,
-                        payment_time REAL NOT NULL,
-                        FOREIGN KEY (user_id) REFERENCES subscriptions (user_id)
+                        payment_time INTEGER NOT NULL
                     )
-                ''')
-                
-                # Add notified column if it doesn't exist
-                cursor.execute("PRAGMA table_info(subscriptions)")
-                columns = [column[1] for column in cursor.fetchall()]
-                if "notified" not in columns:
-                    cursor.execute("ALTER TABLE subscriptions ADD COLUMN notified INTEGER DEFAULT 0")
+                """)
                 
                 conn.commit()
                 logger.info("Database initialized successfully")
-        except sqlite3.Error as e:
-            logger.error(f"Database initialization error: {e}")
+        except Exception as e:
+            logger.error(f"Error initializing database: {e}")
             raise
 
-    def add_subscription(self, user_id, plan_id, duration_days):
-        """Add or update user subscription."""
+    def add_subscription(self, user_id: int, plan_id: str, duration_days: float):
+        """Add or update a subscription."""
         try:
             current_time = datetime.now().timestamp()
+            expiry = (datetime.now() + timedelta(days=duration_days)).timestamp()
             
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
-                
-                # Check if user already has a subscription
-                cursor.execute(
-                    "SELECT expiration_time FROM subscriptions WHERE user_id = ?",
-                    (user_id,)
-                )
-                existing = cursor.fetchone()
-                
-                if existing and existing[0] > current_time:
-                    # Extend existing subscription
-                    new_expiration = existing[0] + (duration_days * 24 * 3600)
-                else:
-                    # Create new subscription
-                    new_expiration = current_time + (duration_days * 24 * 3600)
-                
-                # Insert or update subscription
-                cursor.execute('''
+                cursor.execute("""
                     INSERT OR REPLACE INTO subscriptions 
-                    (user_id, plan_id, purchase_time, expiration_time, notified)
+                    (user_id, plan_id, start_date, expiry_date, notified) 
                     VALUES (?, ?, ?, ?, 0)
-                ''', (user_id, plan_id, current_time, new_expiration))
-                
+                """, (user_id, plan_id, current_time, expiry))
                 conn.commit()
-                logger.info(f"Subscription added/updated for user {user_id}")
-                return True
-        except sqlite3.Error as e:
+                logger.info(f"Added/updated subscription for user {user_id}")
+        except Exception as e:
             logger.error(f"Error adding subscription: {e}")
-            return False
+            raise
 
-    def add_payment(self, user_id, plan_id, amount, currency):
-        """Record a payment."""
+    def get_subscription(self, user_id: int):
+        """Get subscription details for a user."""
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT INTO payments 
-                    (user_id, plan_id, amount, currency, payment_time)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (user_id, plan_id, amount, currency, datetime.now().timestamp()))
-                conn.commit()
-                logger.info(f"Payment recorded for user {user_id}")
-                return True
-        except sqlite3.Error as e:
-            logger.error(f"Error recording payment: {e}")
-            return False
-
-    def get_subscription(self, user_id):
-        """Get user's subscription details."""
-        try:
-            with sqlite3.connect(self.db_file) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM subscriptions WHERE user_id = ?",
-                    (user_id,)
-                )
+                cursor.execute("""
+                    SELECT user_id, plan_id, start_date, expiry_date 
+                    FROM subscriptions 
+                    WHERE user_id = ?
+                """, (user_id,))
                 result = cursor.fetchone()
                 
                 if result:
                     return {
                         "user_id": result[0],
                         "plan_id": result[1],
-                        "purchase_time": result[2],
-                        "expiration_time": result[3]
+                        "start_date": result[2],
+                        "expiry_date": result[3]
                     }
                 return None
-        except sqlite3.Error as e:
+        except Exception as e:
             logger.error(f"Error getting subscription: {e}")
-            return None
+            raise
 
-    def is_subscription_active(self, user_id):
-        """Check if user's subscription is active."""
+    def is_subscription_active(self, user_id: int) -> bool:
+        """Check if a user's subscription is active."""
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
-                current_time = datetime.now().timestamp()
-                
-                cursor.execute(
-                    "SELECT expiration_time FROM subscriptions WHERE user_id = ?",
-                    (user_id,)
-                )
+                cursor.execute("""
+                    SELECT expiry_date 
+                    FROM subscriptions 
+                    WHERE user_id = ?
+                """, (user_id,))
                 result = cursor.fetchone()
                 
                 if result:
-                    return result[0] > current_time
+                    expiry_date = result[0]
+                    return expiry_date > datetime.now().timestamp()
                 return False
-        except sqlite3.Error as e:
-            logger.error(f"Error checking subscription: {e}")
+        except Exception as e:
+            logger.error(f"Error checking subscription status: {e}")
             return False
 
-    def get_remaining_time(self, user_id):
-        """Get remaining subscription time in days."""
+    def add_payment(self, user_id: int, plan_id: str, amount: float, currency: str):
+        """Record a payment."""
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
-                current_time = datetime.now().timestamp()
-                
-                cursor.execute(
-                    "SELECT expiration_time FROM subscriptions WHERE user_id = ?",
-                    (user_id,)
-                )
-                result = cursor.fetchone()
-                
-                if result:
-                    remaining_seconds = result[0] - current_time
-                    return max(0, int(remaining_seconds / (24 * 3600)))  # Convert to days
-                return 0
-        except sqlite3.Error as e:
-            logger.error(f"Error getting remaining time: {e}")
-            return 0
+                cursor.execute("""
+                    INSERT INTO payments 
+                    (user_id, plan_id, amount, currency, payment_time) 
+                    VALUES (?, ?, ?, ?, ?)
+                """, (user_id, plan_id, amount, currency, datetime.now().timestamp()))
+                conn.commit()
+                logger.info(f"Added payment record for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error adding payment: {e}")
+            raise
 
-    def get_payment_history(self, user_id):
-        """Get user's payment history."""
+    def get_payment_history(self, user_id: int):
+        """Get payment history for a user."""
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM payments WHERE user_id = ? ORDER BY payment_time DESC",
-                    (user_id,)
-                )
+                cursor.execute("""
+                    SELECT id, user_id, plan_id, amount, currency, payment_time 
+                    FROM payments 
+                    WHERE user_id = ? 
+                    ORDER BY payment_time DESC
+                """, (user_id,))
                 results = cursor.fetchall()
                 
                 return [{
-                    "payment_id": row[0],
+                    "id": row[0],
                     "user_id": row[1],
                     "plan_id": row[2],
                     "amount": row[3],
                     "currency": row[4],
                     "payment_time": row[5]
                 } for row in results]
-        except sqlite3.Error as e:
+        except Exception as e:
             logger.error(f"Error getting payment history: {e}")
-            return [] 
+            raise
+
+    def get_remaining_time(self, user_id: int) -> float:
+        """Get remaining subscription time in days."""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT expiry_date 
+                    FROM subscriptions 
+                    WHERE user_id = ?
+                """, (user_id,))
+                result = cursor.fetchone()
+                
+                if result:
+                    expiry_date = result[0]
+                    remaining = expiry_date - datetime.now().timestamp()
+                    return max(0, remaining / (24 * 3600))  # Convert to days
+                return 0
+        except Exception as e:
+            logger.error(f"Error getting remaining time: {e}")
+            return 0 
