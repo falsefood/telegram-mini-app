@@ -38,19 +38,24 @@ PRICES = {
 # Store paid users (in a real app, this should be in a database)
 paid_users = set()
 
-async def setup_menu_button(bot):
-    """Setup the menu button with redirect URL."""
+async def setup_menu_button(bot, chat_id=None, is_paid=False):
+    """Setup the menu button with the appropriate URL based on payment status."""
+    url = MINI_APP_URL if is_paid else REDIRECT_URL
     await bot.set_chat_menu_button(
+        chat_id=chat_id,
         menu_button=MenuButtonWebApp(
             text="Open App",
-            web_app=WebAppInfo(url=REDIRECT_URL)
+            web_app=WebAppInfo(url=url)
         )
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
-    # Setup menu button first
-    await setup_menu_button(context.bot)
+    user_id = update.effective_user.id
+    is_paid = user_id in paid_users
+    
+    # Setup menu button with appropriate URL
+    await setup_menu_button(context.bot, update.effective_chat.id, is_paid)
     
     keyboard = [
         [
@@ -58,8 +63,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         ]
     ]
     
-    # Check if user has paid
-    if update.effective_user.id in paid_users:
+    # Add Mini App button only for paid users
+    if is_paid:
         keyboard.append([
             InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
         ])
