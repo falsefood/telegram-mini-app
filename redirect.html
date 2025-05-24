@@ -81,13 +81,20 @@
     <script>
         // Initialize Telegram WebApp
         let tg = window.Telegram.WebApp;
+        
+        // Constants
+        const MAIN_APP_URL = 'https://falsefood.github.io/telegram-mini-app/main.html';
+        const DEBUG_MODE = true; // Always show debug info during development
 
         // Function to parse URL parameters
-        function getUrlParameter(name) {
-            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
-            var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
-            var results = regex.exec(location.search);
-            return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+        function getUrlParameters() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                access: params.get('access') === 'true',
+                debug: params.get('debug') === '1',
+                initData: tg.initData,
+                initDataUnsafe: tg.initDataUnsafe
+            };
         }
 
         // Function to show debug info
@@ -105,63 +112,68 @@
             document.getElementById('errorMessage').classList.remove('hidden');
             document.getElementById('subscribeButton').style.display = 'inline-block';
             
-            if (debug) {
-                showDebug(debug);
+            if (debug || DEBUG_MODE) {
+                showDebug(debug || {
+                    error: message,
+                    location: window.location.href,
+                    webAppData: {
+                        initialized: tg.isInitialized,
+                        platform: tg.platform,
+                        version: tg.version
+                    }
+                });
             }
         }
 
-        // Function to check subscription status
-        function checkAccess() {
-            try {
-                const debugMode = getUrlParameter('debug') === '1';
-                const debugInfo = {
-                    url: window.location.href,
-                    webAppReady: tg.isInitialized,
-                    platform: tg.platform,
-                    version: tg.version,
-                    params: {
-                        access: getUrlParameter('access'),
-                        debug: debugMode
-                    }
-                };
+        // Function to show subscription required message
+        function showSubscriptionRequired() {
+            document.querySelector('.loader').style.display = 'none';
+            document.getElementById('statusMessage').textContent = 'Subscription required to access this content';
+            document.getElementById('subscribeButton').style.display = 'inline-block';
+            
+            // Add click handler for subscribe button
+            document.getElementById('subscribeButton').addEventListener('click', (e) => {
+                e.preventDefault();
+                tg.sendData('request_subscription');
+                tg.close();
+            });
+        }
 
-                console.log('Debug info:', debugInfo);
-                if (debugMode) {
-                    showDebug(debugInfo);
+        // Function to check access and redirect
+        function checkAccessAndRedirect() {
+            try {
+                // Get all parameters
+                const params = getUrlParameters();
+                
+                // Always show debug info during development
+                if (DEBUG_MODE) {
+                    showDebug({
+                        url: window.location.href,
+                        webAppReady: tg.isInitialized,
+                        platform: tg.platform,
+                        version: tg.version,
+                        params: params
+                    });
                 }
 
-                // Get subscription status from URL parameters
-                const hasAccess = getUrlParameter('access');
-                console.log('Access parameter:', hasAccess);
-
-                // Direct access to main app if access is true
-                if (hasAccess === 'true') {
-                    console.log('Access granted, redirecting...');
-                    window.location.href = 'https://falsefood.github.io/telegram-mini-app/';
+                // Verify Telegram WebApp is initialized
+                if (!tg.isInitialized) {
+                    showError('Telegram WebApp is not initialized properly');
                     return;
                 }
 
-                // Show subscription required message
-                document.querySelector('.loader').style.display = 'none';
-                document.getElementById('statusMessage').textContent = 
-                    'Subscription required to access this content';
-                document.getElementById('subscribeButton').style.display = 'inline-block';
-
-                // Add click handler for subscribe button
-                document.getElementById('subscribeButton').addEventListener('click', (e) => {
-                    e.preventDefault();
-                    tg.sendData('request_subscription');
-                    tg.close();
-                });
+                // Check access parameter
+                if (params.access) {
+                    console.log('Access granted, redirecting to main app...');
+                    window.location.href = MAIN_APP_URL;
+                } else {
+                    console.log('Access denied, showing subscription message');
+                    showSubscriptionRequired();
+                }
 
             } catch (error) {
                 console.error('Error:', error);
-                showError('Error checking access: ' + error.message, {
-                    error: error.message,
-                    stack: error.stack,
-                    webAppReady: tg.isInitialized,
-                    url: window.location.href
-                });
+                showError('Error checking access: ' + error.message);
             }
         }
 
@@ -170,26 +182,25 @@
             console.log('Initializing...');
             
             try {
-                // Expand the WebApp
+                // Expand the WebApp to full height
                 tg.expand();
                 
                 // Check if WebApp is ready
                 if (tg.isInitialized) {
-                    console.log('WebApp is initialized');
-                    checkAccess();
+                    console.log('WebApp is initialized, checking access...');
+                    checkAccessAndRedirect();
                 } else {
                     console.log('WebApp not initialized, waiting...');
-                    // Wait for WebApp to be ready
-                    tg.ready();
-                    setTimeout(checkAccess, 100);
+                    tg.ready().then(() => {
+                        console.log('WebApp is now ready');
+                        checkAccessAndRedirect();
+                    }).catch(error => {
+                        showError('Failed to initialize WebApp: ' + error.message);
+                    });
                 }
             } catch (error) {
                 console.error('Initialization error:', error);
-                showError('Initialization error', {
-                    error: error.message,
-                    webApp: tg,
-                    isInitialized: tg.isInitialized
-                });
+                showError('Initialization error: ' + error.message);
             }
         }
 

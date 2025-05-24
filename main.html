@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .content {
+            background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .button {
+            background-color: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Welcome to the App!</h1>
+            <p>Your subscription is active and you have full access.</p>
+        </div>
+        
+        <div class="content">
+            <h2>Available Features</h2>
+            <button class="button" onclick="showFeature('feature1')">Feature 1</button>
+            <button class="button" onclick="showFeature('feature2')">Feature 2</button>
+            <button class="button" onclick="showFeature('feature3')">Feature 3</button>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Telegram WebApp
+        let tg = window.Telegram.WebApp;
+        
+        // Expand the WebApp to full height
+        tg.expand();
+        
+        // Example function to handle feature buttons
+        function showFeature(featureId) {
+            tg.showAlert(`You clicked ${featureId}. This is a demo feature.`);
+        }
+        
+        // Main initialization
+        function init() {
+            // You can add any initialization code here
+            console.log('Main app initialized');
+            
+            // You can access user data if needed
+            if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                console.log('User:', tg.initDataUnsafe.user);
+            }
+        }
+        
+        // Start initialization when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html> 
