@@ -12,6 +12,7 @@ from telegram.ext import (
     filters
 )
 from datetime import datetime
+from database import Database
 
 # Enable logging
 logging.basicConfig(
@@ -51,25 +52,14 @@ SUBSCRIPTION_PLANS = {
     }
 }
 
-# Store subscriptions with expiration time (in a real app, this should be in a database)
-subscriptions = {}
+# Initialize database
+db = Database()
 
 def is_subscription_active(user_id):
-    """Check if user's subscription is active."""
-    if user_id not in subscriptions:
-        return False
-    sub = subscriptions[user_id]
-    current_time = datetime.now().timestamp()
-    return sub["expiration_time"] > current_time
+    return db.is_subscription_active(user_id)
 
 def get_remaining_time(user_id):
-    """Get remaining subscription time in days."""
-    if user_id not in subscriptions:
-        return 0
-    sub = subscriptions[user_id]
-    current_time = datetime.now().timestamp()
-    remaining_seconds = sub["expiration_time"] - current_time
-    return max(0, int(remaining_seconds / (24 * 3600)))  # Convert to days
+    return db.get_remaining_time(user_id)
 
 async def setup_menu_button(bot, chat_id=None, is_paid=False):
     """Setup the menu button with the appropriate URL based on payment status."""
@@ -203,20 +193,17 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     plan_data = SUBSCRIPTION_PLANS[plan_id]
     
     user_id = update.effective_user.id
-    current_time = datetime.now().timestamp()
     
-    # If user already has a subscription, extend it
-    if user_id in subscriptions and subscriptions[user_id]["expiration_time"] > current_time:
-        new_expiration = subscriptions[user_id]["expiration_time"] + (plan_data['duration'] * 24 * 3600)
-    else:
-        new_expiration = current_time + (plan_data['duration'] * 24 * 3600)
+    # Add subscription to database
+    db.add_subscription(user_id, plan_id, plan_data['duration'])
     
-    # Update subscription
-    subscriptions[user_id] = {
-        "plan": plan_id,
-        "expiration_time": new_expiration,
-        "purchase_time": current_time
-    }
+    # Record payment
+    db.add_payment(
+        user_id,
+        plan_id,
+        payment_info.total_amount / 100,
+        payment_info.currency
+    )
     
     # Update menu button for this user to point to the main app
     await context.bot.set_chat_menu_button(
@@ -249,8 +236,9 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
 async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle profile button callback."""
     user_id = update.callback_query.from_user.id
+    subscription = db.get_subscription(user_id)
     
-    if user_id not in subscriptions:
+    if not subscription:
         await update.callback_query.message.reply_text(
             "*📋 Your Profile*\n\n"
             "*Subscription Status:* Not Active ❌\n"
@@ -259,16 +247,27 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
     
-    sub = subscriptions[user_id]
     days_left = get_remaining_time(user_id)
-    plan_data = SUBSCRIPTION_PLANS[sub["plan"]]
+    plan_data = SUBSCRIPTION_PLANS[subscription["plan_id"]]
     status = "Active ✅" if days_left > 0 else "Expired ❌"
     
-    await update.callback_query.message.reply_text(
+    # Get payment history
+    payment_history = db.get_payment_history(user_id)
+    last_payment = payment_history[0] if payment_history else None
+    
+    message = (
         f"*📋 Your Profile*\n\n"
         f"*Subscription Status:* {status}\n"
         f"*Plan:* {plan_data['name']}\n"
-        f"*Time Remaining:* {days_left} days",
+        f"*Time Remaining:* {days_left} days\n"
+    )
+    
+    if last_payment:
+        last_payment_date = datetime.fromtimestamp(last_payment["payment_time"]).strftime("%Y-%m-%d")
+        message += f"\n*Last Payment:* {last_payment['amount']} {last_payment['currency']} on {last_payment_date}"
+    
+    await update.callback_query.message.reply_text(
+        message,
         parse_mode="MarkdownV2"
     )
     await update.callback_query.answer()

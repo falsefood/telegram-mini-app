@@ -14,3 +14,7 @@ media/
 .vscode/
 .idea/
 
+# Database
+*.db
+bot_database.db
+
