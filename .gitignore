@@ -1,5 +1,21 @@
-*.exe
-*.zip
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
 .env
+
+# Media
+media/
+*.mov
+*.MOV
+
+# IDE
+.vscode/
 .idea/
-.vscode/ 
+
+# *.exe
+# *.zip
+# .env
+# .idea/
+# .vscode/ 

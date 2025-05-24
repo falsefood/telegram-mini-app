@@ -1,30 +1,63 @@
-# Telegram Mini App
+# Telegram Bot
 
-A simple Telegram Mini App that demonstrates basic functionality and integration with Telegram's Web App features.
+A Python-based Telegram bot with menu-based interface and various features.
 
-## Setup Instructions
+## Requirements
 
-1. Install Git if you haven't already: https://git-scm.com/download/win
-2. Create a GitHub account if you don't have one
-3. Create a new repository on GitHub
-4. Push this code to your repository:
+- Python 3.11.9
+- Dependencies listed in `requirements.txt`
+
+## Setup
+
+1. Create a virtual environment (recommended):
 ```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin YOUR_REPOSITORY_URL
-git push -u origin main
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
-5. Go to repository Settings > Pages
-6. Under "Source", select "main" branch
-7. Click Save
 
-Your Mini App will be available at: `https://YOUR_USERNAME.github.io/REPOSITORY_NAME`
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-## Using with Telegram Bot
+3. Create a `.env` file in the project root and add your Telegram bot token:
+```
+TELEGRAM_TOKEN=your_bot_token_here
+```
 
-1. Go to @BotFather on Telegram
-2. Use /mybots command
-3. Select your bot
-4. Go to Bot Settings > Menu Button
-5. Set the web app URL to your GitHub Pages URL 
+## Running the Bot
+
+1. Make sure your virtual environment is activated
+2. Run the bot:
+```bash
+python main.py
+```
+
+## Features
+
+- Interactive menu system with inline buttons
+- Products listing
+- Subscription management
+- User profile viewing
+- Help system
+
+## Commands
+
+- `/start` - Start the bot and show the main menu
+- `/help` - Show help information
+
+## Project Structure
+
+```
+.
+├── bot.py              # Main bot implementation
+├── requirements.txt    # Python dependencies
+└── .env               # Environment configuration (create this)
+```
+
+## Security Notes
+
+- Never commit your .env file
+- Keep your tokens secure
+- Use HTTPS in production
+- Validate all payment callbacks 
