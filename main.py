@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
-TOKEN = os.getenv("TELEGRA7823464599:AAGlPXqSlgqfqWLu_YTV3NnVrLITF8FH-pMM_TOKEN")
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 PAYMENT_TOKEN = "381764678:TEST:125040"  # Test payment token
 
 # Mini App URLs
@@ -92,11 +92,8 @@ async def setup_menu_button(bot, chat_id=None, is_paid=False):
             if subscription:
                 logger.info(f"Subscription details: plan={subscription['plan_id']}, expires={subscription['expiry_date']}")
 
-        # Base URL for the redirect page
-        base_url = "https://falsefood.github.io/telegram-mini-app/redirect.html"
-        
-        # Add subscription status and debug info as parameters
-        url = f"{base_url}?access={'true' if is_paid else 'false'}&debug=1"
+        # Use the redirect URL directly
+        url = f"{REDIRECT_URL}?access={str(is_paid).lower()}&debug=1"
         
         logger.info(f"Setting up menu button for chat_id {chat_id} with URL: {url}")
         
@@ -111,7 +108,7 @@ async def setup_menu_button(bot, chat_id=None, is_paid=False):
         
     except Exception as e:
         logger.error(f"Error setting up menu button: {e}")
-        raise  # Re-raise the exception to see it in logs
+        raise
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
@@ -523,19 +520,19 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
     )
     
     # Update menu button with redirect URL and access parameter
-    redirect_url = f"{REDIRECT_URL}?access=true&debug=1"
+    url = f"{REDIRECT_URL}?access=true&debug=1"
     await context.bot.set_chat_menu_button(
         chat_id=update.effective_chat.id,
         menu_button=MenuButtonWebApp(
             text="Open App",
-            web_app=WebAppInfo(url=redirect_url)
+            web_app=WebAppInfo(url=url)
         )
     )
     
     days_left = get_remaining_time(user_id)
     keyboard = [
         [
-            InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=redirect_url))
+            InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=url))
         ],
         [
             InlineKeyboardButton(f"📅 {days_left} days remaining", callback_data="profile")
