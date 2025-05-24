@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, WebAppInfo, MenuButtonWebApp
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, WebAppInfo, MenuButtonWebApp, InputFile
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -11,7 +11,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import Database
 from prettytable import PrettyTable
 import sqlite3
@@ -31,9 +31,18 @@ PAYMENT_TOKEN = "381764678:TEST:125040"  # Test payment token
 MINI_APP_URL = "https://falsefood.github.io/telegram-mini-app/"
 REDIRECT_URL = "https://falsefood.github.io/telegram-mini-app/redirect.html"  # URL to your redirect page
 
+# Video path for welcome message
+WELCOME_VIDEO = os.path.join("media", "IMG_6277.MOV")  # Video file in media directory
+
 # Payment configurations
 CURRENCY = "RUB"
 SUBSCRIPTION_PLANS = {
+    "test": {
+        "price": 6000,     # 60 RUB = 6000 kopeks (minimum allowed price)
+        "duration": 1/1440,  # 1 minute (1 day = 1440 minutes)
+        "name": "Test Plan",
+        "description": "1 minute test access"
+    },
     "basic": {
         "price": 6000,    # 60 RUB = 6000 kopeks
         "duration": 30,   # 30 days
@@ -64,7 +73,13 @@ def is_subscription_active(user_id):
     return db.is_subscription_active(user_id)
 
 def get_remaining_time(user_id):
-    return db.get_remaining_time(user_id)
+    days = db.get_remaining_time(user_id)
+    if days < 1:  # If less than a day
+        minutes = int(days * 24 * 60)  # Convert to minutes
+        if minutes <= 0:
+            return "expired"
+        return f"{minutes} min"
+    return f"{int(days)} days"
 
 async def setup_menu_button(bot, chat_id=None, is_paid=False):
     """Setup the menu button with the appropriate URL based on payment status."""
@@ -79,63 +94,206 @@ async def setup_menu_button(bot, chat_id=None, is_paid=False):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
+    # Delete previous messages if they exist
+    try:
+        # Try to delete the message that triggered the command
+        await update.message.delete()
+    except Exception as e:
+        logger.debug(f"Could not delete trigger message: {e}")
+
     user_id = update.effective_user.id
+    subscription = db.get_subscription(user_id)
     is_paid = is_subscription_active(user_id)
     
     # Setup menu button with appropriate URL
     await setup_menu_button(context.bot, update.effective_chat.id, is_paid)
     
-    keyboard = [
-        [
-            InlineKeyboardButton("💳 Subscriptions", callback_data="subscriptions"),
-        ]
-    ]
+    keyboard = []
     
-    # Add Mini App button only for paid users
-    if is_paid:
-        days_left = get_remaining_time(user_id)
-        keyboard.append([
-            InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
-        ])
-        keyboard.append([
-            InlineKeyboardButton(f"📅 {days_left} days remaining", callback_data="profile")
-        ])
-    
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        "Welcome! Choose your subscription plan:",
-        reply_markup=reply_markup
-    )
+    if subscription:
+        # User has or had a subscription - show text only
+        if is_paid:
+            # Active subscription
+            current_plan = subscription["plan_id"]
+            days_left = get_remaining_time(user_id)
+            
+            # Only show upgrade button if not on the highest plan
+            if current_plan != "pro":
+                keyboard.append([
+                    InlineKeyboardButton("⬆️ Upgrade Plan", callback_data="upgrade_subscription")
+                ])
+            
+            keyboard.append([
+                InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
+            ])
+            keyboard.append([
+                InlineKeyboardButton(f"📅 {days_left} remaining", callback_data="profile")
+            ])
+            
+            caption_text = (
+                "🎉 *Welcome to our service\\!*\n\n"
+                "Your subscription is active\\.\n"
+                f"*Current Plan:* {SUBSCRIPTION_PLANS[current_plan]['name']}\n"
+                f"*Time Left:* {days_left}"
+            )
+            
+            # Send text message for active subscription
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=caption_text,
+                parse_mode="MarkdownV2",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            # Expired subscription
+            last_plan = subscription["plan_id"]
+            keyboard.append([
+                InlineKeyboardButton("🔄 Renew Subscription", callback_data="subscriptions")
+            ])
+            
+            # Get last payment info
+            payment_history = db.get_payment_history(user_id)
+            last_payment = payment_history[0] if payment_history else None
+            last_payment_date = (
+                datetime.fromtimestamp(last_payment["payment_time"]).strftime("%Y\\-%m\\-%d")
+                if last_payment else "N/A"
+            )
+            
+            caption_text = (
+                "⚠️ *Subscription Expired*\n\n"
+                f"*Previous Plan:* {SUBSCRIPTION_PLANS[last_plan]['name']}\n"
+                f"*Last Payment:* {last_payment_date}\n\n"
+                "To continue using our service, please renew your subscription\\."
+            )
+            
+            # Send text message for expired subscription
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=caption_text,
+                parse_mode="MarkdownV2",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+    else:
+        # No subscription history - new user, show video
+        keyboard = [[
+            InlineKeyboardButton("💳 Subscribe Now", callback_data="subscriptions")
+        ]]
+        caption_text = "🎉 *Welcome to our service\\!*\n\nClick the button below to view available subscription plans:"
+        
+        # Try to send welcome video for new users only
+        try:
+            if os.path.exists(WELCOME_VIDEO):
+                with open(WELCOME_VIDEO, 'rb') as video:
+                    await context.bot.send_video(
+                        chat_id=update.effective_chat.id,
+                        video=video,
+                        caption=caption_text,
+                        parse_mode="MarkdownV2",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        supports_streaming=True,
+                        width=1920,
+                        height=1080
+                    )
+            else:
+                logger.warning(f"Welcome video not found at path: {WELCOME_VIDEO}")
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=caption_text,
+                    parse_mode="MarkdownV2",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+        except Exception as e:
+            logger.error(f"Error sending welcome message: {e}")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=caption_text,
+                parse_mode="MarkdownV2",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle button clicks."""
     query = update.callback_query
     await query.answer()
 
-    if query.data == "subscriptions":
+    if query.data == "subscriptions" or query.data == "upgrade_subscription":
+        user_id = update.effective_user.id
+        subscription = db.get_subscription(user_id) if query.data == "upgrade_subscription" else None
+        current_plan = subscription["plan_id"] if subscription else None
+        
         keyboard = []
+        
+        # Always show test plan first if not upgrading
+        if query.data != "upgrade_subscription":
+            plan = SUBSCRIPTION_PLANS["test"]
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🔬 {plan['name']} - {plan['price']/100}₽/1min (For Testing)",
+                    callback_data="pay_test"
+                )
+            ])
+            keyboard.append([
+                InlineKeyboardButton("──────────────", callback_data="none")
+            ])
+        
         for plan_id, plan in SUBSCRIPTION_PLANS.items():
+            # Skip test plan as it's handled above
+            if plan_id == "test":
+                continue
+                
+            # Skip current plan and lower plans when upgrading
+            if current_plan and (plan_id == current_plan or 
+                               (current_plan == "premium" and plan_id == "basic") or
+                               (current_plan == "pro")):
+                continue
+                
             duration_text = f"{plan['duration']} days"
             if plan['duration'] >= 365:
                 duration_text = f"{plan['duration']//365} year"
             price_rub = plan['price'] / 100
+            
+            button_text = f"{plan['name']} - {price_rub}₽/{duration_text}"
+            if query.data == "upgrade_subscription":
+                button_text = f"⬆️ Upgrade to {button_text}"
+            
             keyboard.append([
                 InlineKeyboardButton(
-                    f"{plan['name']} - {price_rub}₽/{duration_text}",
+                    button_text,
                     callback_data=f"pay_{plan_id}"
                 )
             ])
+        
         keyboard.append([
             InlineKeyboardButton("« Back", callback_data="back_to_start")
         ])
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.message.edit_text(
-            "Choose your subscription plan:\n\n"
-            "🔹 Basic Plan: 30 days access\n"
-            "🔹 Premium Plan: 90 days access\n"
-            "🔹 Pro Plan: 1 year access",
-            reply_markup=reply_markup
-        )
+        message_text = "Choose your subscription plan:\n\n"
+        if query.data == "upgrade_subscription":
+            message_text = "Choose your upgrade plan:\n\n"
+        else:
+            message_text = "Choose your subscription plan:\n\n"
+            message_text += "🔬 Test Plan: 1 minute access (for testing)\n"
+            message_text += "──────────────\n"
+            
+        message_text += "🔹 Basic Plan: 30 days access\n"
+        message_text += "🔹 Premium Plan: 90 days access\n"
+        message_text += "🔹 Pro Plan: 1 year access"
+        
+        try:
+            await query.message.edit_text(
+                message_text,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error editing message: {e}")
+            await query.message.reply_text(
+                message_text,
+                reply_markup=reply_markup
+            )
+    elif query.data == "none":
+        # Do nothing for separator button
+        return
     elif query.data.startswith("pay_"):
         plan = query.data.replace("pay_", "")
         try:
@@ -150,7 +308,124 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             logger.error(f"Payment error: {e}")
             await query.message.reply_text("Sorry, there was an error processing your payment request. Please try again later.")
     elif query.data == "back_to_start":
-        await start(query, context)
+        # Get current subscription status
+        user_id = update.effective_user.id
+        subscription = db.get_subscription(user_id)
+        is_paid = is_subscription_active(user_id)
+        
+        keyboard = []
+        caption_text = "Welcome to the bot\\! "
+        
+        try:
+            # Delete the current message
+            await query.message.delete()
+            
+            if subscription:
+                # User has or had a subscription - show text only
+                if is_paid:
+                    # Active subscription
+                    current_plan = subscription["plan_id"]
+                    days_left = get_remaining_time(user_id)
+                    
+                    # Only show upgrade button if not on the highest plan
+                    if current_plan != "pro":
+                        keyboard.append([
+                            InlineKeyboardButton("⬆️ Upgrade Plan", callback_data="upgrade_subscription")
+                        ])
+                    
+                    keyboard.append([
+                        InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
+                    ])
+                    keyboard.append([
+                        InlineKeyboardButton(f"📅 {days_left} remaining", callback_data="profile")
+                    ])
+                    
+                    caption_text = (
+                        "🎉 *Welcome to our service\\!*\n\n"
+                        "Your subscription is active\\.\n"
+                        f"*Current Plan:* {SUBSCRIPTION_PLANS[current_plan]['name']}\n"
+                        f"*Time Left:* {days_left}"
+                    )
+                    
+                    # Send text message for active subscription
+                    sent_message = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=caption_text,
+                        parse_mode="MarkdownV2",
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                else:
+                    # Expired subscription
+                    last_plan = subscription["plan_id"]
+                    keyboard.append([
+                        InlineKeyboardButton("🔄 Renew Subscription", callback_data="subscriptions")
+                    ])
+                    
+                    # Get last payment info
+                    payment_history = db.get_payment_history(user_id)
+                    last_payment = payment_history[0] if payment_history else None
+                    last_payment_date = (
+                        datetime.fromtimestamp(last_payment["payment_time"]).strftime("%Y\\-%m\\-%d")
+                        if last_payment else "N/A"
+                    )
+                    
+                    caption_text = (
+                        "⚠️ *Subscription Expired*\n\n"
+                        f"*Previous Plan:* {SUBSCRIPTION_PLANS[last_plan]['name']}\n"
+                        f"*Last Payment:* {last_payment_date}\n\n"
+                        "To continue using our service, please renew your subscription\\."
+                    )
+                    
+                    # Send text message for expired subscription
+                    sent_message = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=caption_text,
+                        parse_mode="MarkdownV2",
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+            else:
+                # No subscription history - new user, show video
+                keyboard = [[
+                    InlineKeyboardButton("💳 Subscribe Now", callback_data="subscriptions")
+                ]]
+                caption_text = "🎉 *Welcome to our service\\!*\n\nClick the button below to view available subscription plans:"
+                
+                # Try to send welcome video for new users only
+                if os.path.exists(WELCOME_VIDEO):
+                    with open(WELCOME_VIDEO, 'rb') as video:
+                        sent_message = await context.bot.send_video(
+                            chat_id=update.effective_chat.id,
+                            video=video,
+                            caption=caption_text,
+                            parse_mode="MarkdownV2",
+                            reply_markup=InlineKeyboardMarkup(keyboard),
+                            supports_streaming=True,
+                            width=1920,
+                            height=1080
+                        )
+                else:
+                    logger.warning(f"Welcome video not found at path: {WELCOME_VIDEO}")
+                    sent_message = await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=caption_text,
+                        parse_mode="MarkdownV2",
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+            
+            # Store the message ID in user data to track it
+            if not context.user_data.get('message_ids'):
+                context.user_data['message_ids'] = set()
+            context.user_data['message_ids'].add(sent_message.message_id)
+            
+        except Exception as e:
+            logger.error(f"Error handling back button: {e}")
+            # Fallback to simple message if something goes wrong
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=caption_text,
+                parse_mode="MarkdownV2",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
 
 async def send_invoice(chat_id: int, plan: str, bot) -> None:
     """Send invoice for payment."""
@@ -254,7 +529,7 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     
     days_left = get_remaining_time(user_id)
     plan_data = SUBSCRIPTION_PLANS[subscription["plan_id"]]
-    status = "Active ✅" if days_left > 0 else "Expired ❌"
+    status = "Active ✅" if days_left != "expired" else "Expired ❌"
     
     # Get payment history
     payment_history = db.get_payment_history(user_id)
@@ -264,7 +539,7 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         f"*📋 Your Profile*\n\n"
         f"*Subscription Status:* {status}\n"
         f"*Plan:* {plan_data['name']}\n"
-        f"*Time Remaining:* {days_left} days\n"
+        f"*Time Remaining:* {days_left}\n"
     )
     
     if last_payment:
@@ -385,13 +660,142 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         parse_mode="MarkdownV2"
     )
 
+async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Command to check subscription status."""
+    user_id = update.effective_user.id
+    subscription = db.get_subscription(user_id)
+    
+    if not subscription:
+        keyboard = [
+            [InlineKeyboardButton("💳 Get Subscription", callback_data="subscriptions")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "❌ You don't have any active subscriptions.\n"
+            "Click below to view available plans:",
+            reply_markup=reply_markup
+        )
+        return
+    
+    days_left = get_remaining_time(user_id)
+    plan_data = SUBSCRIPTION_PLANS[subscription["plan_id"]]
+    
+    if days_left == "expired":
+        keyboard = [
+            [InlineKeyboardButton("🔄 Renew Subscription", callback_data="subscriptions")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "⚠️ Your subscription has expired!\n\n"
+            f"*Previous Plan:* {plan_data['name']}\n"
+            "*Status:* Expired ❌\n\n"
+            "Click below to renew your subscription:",
+            parse_mode="MarkdownV2",
+            reply_markup=reply_markup
+        )
+    else:
+        keyboard = [
+            [InlineKeyboardButton("🔄 Extend Subscription", callback_data="subscriptions")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            f"*Subscription Status*\n\n"
+            f"*Current Plan:* {plan_data['name']}\n"
+            f"*Status:* Active ✅\n"
+            f"*Days Remaining:* {days_left}\n\n"
+            f"Click below to extend your subscription:",
+            parse_mode="MarkdownV2",
+            reply_markup=reply_markup
+        )
+
+async def check_expired_subscriptions(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Check for expired subscriptions and notify users."""
+    try:
+        with sqlite3.connect(db.db_file) as conn:
+            cursor = conn.cursor()
+            current_time = datetime.now().timestamp()
+            
+            # Get subscriptions that expired in the last 24 hours
+            yesterday = current_time - 24*60*60
+            cursor.execute("""
+                SELECT user_id, plan_id, expiry_date 
+                FROM subscriptions 
+                WHERE expiry_date BETWEEN ? AND ?
+                AND notified = 0  -- Only get non-notified expirations
+            """, (yesterday, current_time))
+            
+            expired_subs = cursor.fetchall()
+            
+            for user_id, plan_id, expiry_date in expired_subs:
+                plan_data = SUBSCRIPTION_PLANS[plan_id]
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Renew Subscription", callback_data="subscriptions")],
+                    [InlineKeyboardButton("👤 View Profile", callback_data="profile")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=(
+                            "⚠️ *Your Subscription Has Expired\\!*\n\n"
+                            f"*Previous Plan:* {plan_data['name']}\n"
+                            "*Status:* Expired ❌\n\n"
+                            "To continue using our service, please renew your subscription\\."
+                        ),
+                        parse_mode="MarkdownV2",
+                        reply_markup=reply_markup
+                    )
+                    
+                    # Mark as notified in database
+                    cursor.execute("""
+                        UPDATE subscriptions 
+                        SET notified = 1 
+                        WHERE user_id = ? AND expiry_date = ?
+                    """, (user_id, expiry_date))
+                    conn.commit()
+                    
+                except Exception as e:
+                    logger.error(f"Failed to notify user {user_id} about expired subscription: {e}")
+                    
+    except Exception as e:
+        logger.error(f"Error in check_expired_subscriptions: {e}")
+
+# Add this new command handler function
+async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Check if user has access when they try to use the bot."""
+    user_id = update.effective_user.id
+    subscription = db.get_subscription(user_id)
+    
+    if not subscription or not is_subscription_active(user_id):
+        keyboard = [
+            [InlineKeyboardButton("💳 Get Subscription", callback_data="subscriptions")],
+            [InlineKeyboardButton("👤 View Profile", callback_data="profile")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            "⚠️ *Access Restricted*\n\n"
+            "Your subscription has expired or is not active\\. "
+            "To continue using our service, please get a subscription\\.",
+            parse_mode="MarkdownV2",
+            reply_markup=reply_markup
+        )
+        return False
+    return True
+
 def main() -> None:
     """Start the bot."""
-    application = Application.builder().token(TOKEN).build()
+    # Build the application with job queue
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .build()
+    )
 
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("id", id_command))
+    application.add_handler(CommandHandler("subscription", check_subscription))
     application.add_handler(CallbackQueryHandler(button_click))
     
     # Add payment handlers
@@ -403,6 +807,16 @@ def main() -> None:
 
     # Add admin command
     application.add_handler(CommandHandler("admin", admin_command))
+
+    # Schedule the subscription check job (run every minute for testing)
+    if application.job_queue:
+        application.job_queue.run_repeating(
+            callback=check_expired_subscriptions,
+            interval=60.0,  # Check every minute
+            first=10.0
+        )
+    else:
+        logger.warning("Job queue is not available. Subscription expiration checks will not run automatically.")
 
     # Start the Bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)

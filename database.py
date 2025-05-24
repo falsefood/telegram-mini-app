@@ -21,7 +21,8 @@ class Database:
                         user_id INTEGER PRIMARY KEY,
                         plan_id TEXT NOT NULL,
                         purchase_time REAL NOT NULL,
-                        expiration_time REAL NOT NULL
+                        expiration_time REAL NOT NULL,
+                        notified INTEGER DEFAULT 0
                     )
                 ''')
                 
@@ -37,6 +38,12 @@ class Database:
                         FOREIGN KEY (user_id) REFERENCES subscriptions (user_id)
                     )
                 ''')
+                
+                # Add notified column if it doesn't exist
+                cursor.execute("PRAGMA table_info(subscriptions)")
+                columns = [column[1] for column in cursor.fetchall()]
+                if "notified" not in columns:
+                    cursor.execute("ALTER TABLE subscriptions ADD COLUMN notified INTEGER DEFAULT 0")
                 
                 conn.commit()
                 logger.info("Database initialized successfully")
@@ -69,8 +76,8 @@ class Database:
                 # Insert or update subscription
                 cursor.execute('''
                     INSERT OR REPLACE INTO subscriptions 
-                    (user_id, plan_id, purchase_time, expiration_time)
-                    VALUES (?, ?, ?, ?)
+                    (user_id, plan_id, purchase_time, expiration_time, notified)
+                    VALUES (?, ?, ?, ?, 0)
                 ''', (user_id, plan_id, current_time, new_expiration))
                 
                 conn.commit()
