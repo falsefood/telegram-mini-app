@@ -34,8 +34,22 @@
         const webapp = window.Telegram.WebApp;
         webapp.ready();
         
-        // Close the WebApp
-        webapp.close();
+        // Add a small delay before closing
+        setTimeout(() => {
+            // Show the message for a moment before closing
+            webapp.showPopup({
+                title: 'Subscription Required',
+                message: 'Please subscribe to access this content.',
+                buttons: [{
+                    type: 'close'
+                }]
+            });
+            
+            // Close after showing the popup
+            setTimeout(() => {
+                webapp.close();
+            }, 2000);
+        }, 1000);
     </script>
 </body>
 </html> 
