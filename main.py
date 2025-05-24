@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+TOKEN = os.getenv("TELEGRA7823464599:AAGlPXqSlgqfqWLu_YTV3NnVrLITF8FH-pMM_TOKEN")
 PAYMENT_TOKEN = "381764678:TEST:125040"  # Test payment token
 
 # Mini App URLs

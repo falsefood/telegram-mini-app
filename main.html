@@ -22,64 +22,106 @@
             margin-bottom: 30px;
         }
         .content {
-            background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            padding: 20px;
+            background-color: var(--tg-theme-secondary-bg-color, #f4f4f5);
             border-radius: 10px;
+            padding: 20px;
             margin-bottom: 20px;
         }
-        .button {
-            background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            width: 100%;
-            margin-bottom: 10px;
+        #debug {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 10px;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 50vh;
+            overflow-y: auto;
+            display: none;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Welcome to the App!</h1>
-            <p>Your subscription is active and you have full access.</p>
+            <h1>Welcome to Mini App</h1>
         </div>
-        
         <div class="content">
-            <h2>Available Features</h2>
-            <button class="button" onclick="showFeature('feature1')">Feature 1</button>
-            <button class="button" onclick="showFeature('feature2')">Feature 2</button>
-            <button class="button" onclick="showFeature('feature3')">Feature 3</button>
+            <p>You have successfully accessed the app!</p>
+            <p>Your subscription is active.</p>
         </div>
     </div>
+    <div id="debug"></div>
 
     <script>
-        // Initialize Telegram WebApp
-        let tg = window.Telegram.WebApp;
-        
-        // Expand the WebApp to full height
-        tg.expand();
-        
-        // Example function to handle feature buttons
-        function showFeature(featureId) {
-            tg.showAlert(`You clicked ${featureId}. This is a demo feature.`);
-        }
-        
-        // Main initialization
-        function init() {
-            // You can add any initialization code here
-            console.log('Main app initialized');
-            
-            // You can access user data if needed
-            if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-                console.log('User:', tg.initDataUnsafe.user);
+        const tg = window.Telegram.WebApp;
+        const debug = document.getElementById('debug');
+
+        // Debug function
+        function log(text, data = null) {
+            const time = new Date().toTimeString().split(' ')[0];
+            const logText = `[${time}] ${text}\n${data ? JSON.stringify(data, null, 2) + '\n' : ''}`;
+            console.log(text, data || '');
+            if (debug.style.display === 'block') {
+                debug.textContent += logText;
+                debug.scrollTop = debug.scrollHeight;
             }
         }
-        
-        // Start initialization when page loads
+
+        // Get URL parameters
+        function getUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                access: params.get('access'),
+                debug: params.get('debug')
+            };
+        }
+
+        // Main function
+        async function init() {
+            try {
+                log('Initializing main app...');
+                tg.expand();
+
+                const params = getUrlParams();
+                log('URL Parameters:', params);
+
+                // Show debug panel if debug parameter is present
+                if (params.debug === '1') {
+                    debug.style.display = 'block';
+                }
+
+                // Verify access
+                if (params.access !== 'true') {
+                    log('Access verification failed, redirecting to check...');
+                    window.location.href = 'redirect.html';
+                    return;
+                }
+
+                // Log WebApp state
+                log('WebApp State:', {
+                    initialized: tg.isInitialized,
+                    version: tg.version,
+                    platform: tg.platform,
+                    initData: tg.initData
+                });
+
+                // App is ready
+                tg.ready();
+            } catch (error) {
+                log('Error:', {
+                    message: error.message,
+                    stack: error.stack
+                });
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Start when page loads
         document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
