@@ -83,7 +83,12 @@ def get_remaining_time(user_id):
 
 async def setup_menu_button(bot, chat_id=None, is_paid=False):
     """Setup the menu button with the appropriate URL based on payment status."""
-    url = MINI_APP_URL if is_paid else REDIRECT_URL
+    # Base URL for the redirect page
+    base_url = "https://falsefood.github.io/telegram-mini-app/redirect.html"
+    
+    # Add subscription status as start parameter
+    url = f"{base_url}?start_param={'subscribed' if is_paid else 'not_subscribed'}"
+    
     await bot.set_chat_menu_button(
         chat_id=chat_id,
         menu_button=MenuButtonWebApp(

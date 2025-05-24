@@ -7,7 +7,5 @@ aiohttp==3.9.1
 yookassa==3.0.0
 pytz==2024.1
 aiosqlite==0.20.0
-Flask==3.0.0
-Flask-CORS==4.0.0
 
 # Note: This bot requires Python 3.8-3.11 due to dependency requirements 

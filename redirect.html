@@ -71,26 +71,18 @@
         let tg = window.Telegram.WebApp;
         tg.expand();
         
-        // Function to check subscription status
-        async function checkSubscription() {
+        // Function to check subscription status from initData
+        function checkSubscription() {
             try {
-                const response = await fetch('YOUR_API_ENDPOINT/check-subscription', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        user_id: tg.initDataUnsafe.user.id
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-
-                const data = await response.json();
+                // Get subscription data from initData
+                const startParam = tg.initDataUnsafe.start_param;
                 
-                if (data.hasAccess) {
+                if (!startParam) {
+                    throw new Error('No subscription data available');
+                }
+                
+                // The start_param will be 'subscribed' if user has access
+                if (startParam === 'subscribed') {
                     // User has active subscription - redirect to main app
                     window.location.href = 'https://falsefood.github.io/telegram-mini-app/';
                 } else {
