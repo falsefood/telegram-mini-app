@@ -13,6 +13,8 @@ from telegram.ext import (
 )
 from datetime import datetime
 from database import Database
+from prettytable import PrettyTable
+import sqlite3
 
 # Enable logging
 logging.basicConfig(
@@ -54,6 +56,9 @@ SUBSCRIPTION_PLANS = {
 
 # Initialize database
 db = Database()
+
+# Add after other constants
+ADMIN_IDS = {int(id.strip()) for id in os.getenv("ADMIN_IDS", "").split(",")} if os.getenv("ADMIN_IDS") else set()
 
 def is_subscription_active(user_id):
     return db.is_subscription_active(user_id)
@@ -272,6 +277,57 @@ async def profile_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
     await update.callback_query.answer()
 
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command to view database contents."""
+    user_id = update.effective_user.id
+    
+    if user_id not in ADMIN_IDS:
+        await update.message.reply_text("⛔️ You are not authorized to use admin commands.")
+        return
+    
+    # Get all subscriptions
+    with sqlite3.connect(db.db_file) as conn:
+        cursor = conn.cursor()
+        
+        # Get subscriptions
+        cursor.execute("SELECT * FROM subscriptions")
+        subscriptions = cursor.fetchall()
+        
+        # Get payments
+        cursor.execute("SELECT * FROM payments")
+        payments = cursor.fetchall()
+        
+        # Create subscription table
+        sub_table = PrettyTable()
+        sub_table.field_names = ["User ID", "Plan", "Purchase Date", "Expiry Date", "Status"]
+        
+        for sub in subscriptions:
+            purchase_date = datetime.fromtimestamp(sub[2]).strftime("%Y-%m-%d")
+            expiry_date = datetime.fromtimestamp(sub[3]).strftime("%Y-%m-%d")
+            is_active = "Active ✅" if sub[3] > datetime.now().timestamp() else "Expired ❌"
+            sub_table.add_row([sub[0], sub[1], purchase_date, expiry_date, is_active])
+        
+        # Create payments table
+        pay_table = PrettyTable()
+        pay_table.field_names = ["ID", "User ID", "Plan", "Amount", "Currency", "Date"]
+        
+        for payment in payments:
+            payment_date = datetime.fromtimestamp(payment[5]).strftime("%Y-%m-%d")
+            pay_table.add_row([
+                payment[0], payment[1], payment[2],
+                payment[3], payment[4], payment_date
+            ])
+        
+        # Send tables
+        await update.message.reply_text(
+            "*📊 Database Contents*\n\n"
+            "*Active Subscriptions:*\n"
+            f"```\n{sub_table}\n```\n\n"
+            "*Payment History:*\n"
+            f"```\n{pay_table}\n```",
+            parse_mode="MarkdownV2"
+        )
+
 def main() -> None:
     """Start the bot."""
     application = Application.builder().token(TOKEN).build()
@@ -286,6 +342,9 @@ def main() -> None:
 
     # Add profile handler
     application.add_handler(CallbackQueryHandler(profile_callback))
+
+    # Add admin command
+    application.add_handler(CommandHandler("admin", admin_command))
 
     # Start the Bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
