@@ -149,8 +149,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                         InlineKeyboardButton("⬆️ Upgrade Plan", callback_data="upgrade_subscription")
                     ])
                 
+                # Use redirect URL with access parameter
+                redirect_url = f"{REDIRECT_URL}?access=true&debug=1"
                 keyboard.append([
-                    InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
+                    InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=redirect_url))
                 ])
                 keyboard.append([
                     InlineKeyboardButton(f"📅 {days_left} remaining", callback_data="profile")
@@ -366,8 +368,10 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                             InlineKeyboardButton("⬆️ Upgrade Plan", callback_data="upgrade_subscription")
                         ])
                     
+                    # Use redirect URL with access parameter
+                    redirect_url = f"{REDIRECT_URL}?access=true&debug=1"
                     keyboard.append([
-                        InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
+                        InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=redirect_url))
                     ])
                     keyboard.append([
                         InlineKeyboardButton(f"📅 {days_left} remaining", callback_data="profile")
@@ -518,19 +522,20 @@ async def successful_payment_callback(update: Update, context: ContextTypes.DEFA
         payment_info.currency
     )
     
-    # Update menu button for this user to point to the main app
+    # Update menu button with redirect URL and access parameter
+    redirect_url = f"{REDIRECT_URL}?access=true&debug=1"
     await context.bot.set_chat_menu_button(
         chat_id=update.effective_chat.id,
         menu_button=MenuButtonWebApp(
             text="Open App",
-            web_app=WebAppInfo(url=MINI_APP_URL)
+            web_app=WebAppInfo(url=redirect_url)
         )
     )
     
     days_left = get_remaining_time(user_id)
     keyboard = [
         [
-            InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=MINI_APP_URL))
+            InlineKeyboardButton("🚀 Open App", web_app=WebAppInfo(url=redirect_url))
         ],
         [
             InlineKeyboardButton(f"📅 {days_left} days remaining", callback_data="profile")
