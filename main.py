@@ -328,12 +328,24 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             parse_mode="MarkdownV2"
         )
 
+# Add this new command handler function
+async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show user their Telegram ID."""
+    user = update.effective_user
+    await update.message.reply_text(
+        f"Your Telegram ID is: `{user.id}`\n"
+        f"Add this ID to your .env file as:\n"
+        f"`ADMIN_IDS={user.id}`",
+        parse_mode="MarkdownV2"
+    )
+
 def main() -> None:
     """Start the bot."""
     application = Application.builder().token(TOKEN).build()
 
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("id", id_command))
     application.add_handler(CallbackQueryHandler(button_click))
     
     # Add payment handlers
