@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from database import Database
 from prettytable import PrettyTable
 import sqlite3
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 # Enable logging
 logging.basicConfig(
@@ -857,4 +859,11 @@ def main() -> None:
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    main() 
+    # Start Flask in a separate thread
+    from threading import Thread
+    flask_thread = Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Start the bot
+    application.run_polling() 

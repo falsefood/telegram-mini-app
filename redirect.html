@@ -3,134 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Checking Access...</title>
+    <title>Redirecting...</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            text-align: center;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
+            background: #f0f2f5;
+            color: #333;
         }
-        #debug {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .debug-panel {
+            margin-top: 20px;
             padding: 10px;
-            background: rgba(0,0,0,0.8);
-            color: #fff;
-            font-family: monospace;
-            font-size: 12px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+        .debug-panel pre {
+            margin: 0;
             white-space: pre-wrap;
-            word-wrap: break-word;
-            max-height: 50vh;
-            overflow-y: auto;
         }
         .button {
-            background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            margin-top: 20px;
+            display: inline-block;
+            padding: 10px 20px;
+            background: #0088cc;
+            color: white;
             text-decoration: none;
-            display: none;
+            border-radius: 5px;
+            margin-top: 10px;
         }
-        .message {
-            margin: 20px 0;
-            font-size: 16px;
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
-    <div id="message" class="message">Checking access...</div>
-    <a href="#" id="subscribeBtn" class="button">Get Subscription</a>
-    <div id="debug"></div>
+    <div class="container">
+        <h2>Checking Access...</h2>
+        <div id="status">Please wait while we verify your access...</div>
+        <div id="error" class="error"></div>
+        <div class="debug-panel">
+            <h3>Debug Information:</h3>
+            <pre id="debug-info"></pre>
+        </div>
+    </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        const debug = document.getElementById('debug');
-        const message = document.getElementById('message');
-        const subscribeBtn = document.getElementById('subscribeBtn');
+        let tg = window.Telegram.WebApp;
+        let debugInfo = document.getElementById('debug-info');
+        let statusDiv = document.getElementById('status');
+        let errorDiv = document.getElementById('error');
 
-        // Debug function
-        function log(text, data = null) {
-            const time = new Date().toTimeString().split(' ')[0];
-            const logText = `[${time}] ${text}\n${data ? JSON.stringify(data, null, 2) + '\n' : ''}`;
-            console.log(text, data || '');
-            debug.textContent += logText;
-            debug.scrollTop = debug.scrollHeight;
+        function updateDebugInfo(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            debugInfo.innerHTML += `[${timestamp}] ${message}\n`;
         }
 
-        // Get URL parameters
-        function getUrlParams() {
-            const params = new URLSearchParams(window.location.search);
-            return {
-                access: params.get('access'),
-                debug: params.get('debug')
-            };
+        function showError(message) {
+            errorDiv.textContent = message;
+            statusDiv.textContent = 'Access Denied';
         }
 
-        // Show subscription required
-        function showSubscriptionRequired() {
-            message.textContent = 'Subscription required to access this content';
-            subscribeBtn.style.display = 'inline-block';
-            subscribeBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                tg.sendData('request_subscription');
-                tg.close();
-            });
-        }
-
-        // Main function
-        async function init() {
+        async function checkAccess() {
             try {
-                log('Initializing WebApp...');
-                tg.expand();
-
-                // Get parameters
-                const params = getUrlParams();
-                log('URL Parameters:', params);
-
-                // Log WebApp state
-                log('WebApp State:', {
-                    initialized: tg.isInitialized,
+                updateDebugInfo('Initializing WebApp...');
+                updateDebugInfo('WebApp State: ' + JSON.stringify({
                     version: tg.version,
                     platform: tg.platform,
                     initData: tg.initData
+                }, null, 2));
+
+                // Get user ID from initData
+                const initData = new URLSearchParams(tg.initData);
+                const userData = JSON.parse(decodeURIComponent(initData.get('user')));
+                const userId = userData.id;
+
+                updateDebugInfo(`Checking access for user ID: ${userId}`);
+
+                // Make AJAX request to check access
+                const response = await fetch('http://localhost:5000/check_access', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ user_id: userId })
                 });
 
-                // Check access
-                if (params.access === 'true') {
-                    log('Access granted, redirecting...');
-                    message.textContent = 'Access granted, redirecting...';
+                const data = await response.json();
+                updateDebugInfo('Access check response: ' + JSON.stringify(data, null, 2));
+
+                if (data.has_access) {
+                    updateDebugInfo('Access granted, redirecting to main page...');
                     window.location.href = 'main.html';
                 } else {
-                    log('Access denied');
-                    showSubscriptionRequired();
+                    updateDebugInfo('Access denied');
+                    showError('Subscription Required');
+                    statusDiv.innerHTML = `
+                        <p>You need an active subscription to access this content.</p>
+                        <a href="https://t.me/your_bot_username" class="button">Get Subscription</a>
+                    `;
                 }
             } catch (error) {
-                log('Error:', {
-                    message: error.message,
-                    stack: error.stack
-                });
-                message.textContent = 'Error: ' + error.message;
+                updateDebugInfo('Error: ' + error.message);
+                showError('An error occurred while checking access');
             }
         }
 
-        // Start when page loads
-        document.addEventListener('DOMContentLoaded', init);
+        // Initialize when the page loads
+        tg.ready();
+        checkAccess();
     </script>
 </body>
 </html> 
