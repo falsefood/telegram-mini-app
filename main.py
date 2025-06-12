@@ -17,6 +17,7 @@ from prettytable import PrettyTable
 import sqlite3
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from threading import Thread
 
 # Enable logging
 logging.basicConfig(
@@ -859,11 +860,45 @@ def main() -> None:
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
+    # Initialize Flask app
+    app = Flask(__name__)
+    CORS(app, resources={
+        r"/*": {
+            "origins": [
+                "https://falsefood.github.io",
+                "https://web.telegram.org",
+                "https://telegram.org"
+            ],
+            "methods": ["GET", "POST", "OPTIONS"],
+            "allow_headers": ["Content-Type"]
+        }
+    })
+
+    @app.route('/check_access', methods=['POST', 'OPTIONS'])
+    def check_access():
+        if request.method == 'OPTIONS':
+            return '', 200
+            
+        try:
+            data = request.get_json()
+            user_id = data.get('user_id')
+            
+            if not user_id:
+                return jsonify({'error': 'No user_id provided'}), 400
+                
+            is_paid = db.is_subscription_active(user_id)
+            return jsonify({
+                'has_access': is_paid,
+                'user_id': user_id
+            })
+        except Exception as e:
+            logger.error(f"Error checking access: {e}")
+            return jsonify({'error': str(e)}), 500
+
     # Start Flask in a separate thread
-    from threading import Thread
-    flask_thread = Thread(target=lambda: app.run(host='0.0.0.0', port=5000))
+    flask_thread = Thread(target=lambda: app.run(host='0.0.0.0', port=5000, ssl_context='adhoc'))
     flask_thread.daemon = True
     flask_thread.start()
     
     # Start the bot
-    application.run_polling() 
+    main() 

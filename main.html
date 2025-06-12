@@ -84,7 +84,7 @@
                 updateDebugInfo(`Verifying access for user ID: ${userId}`);
 
                 // Make AJAX request to check access
-                const response = await fetch('http://localhost:5000/check_access', {
+                const response = await fetch('https://falsefood.github.io/telegram-mini-app/check_access', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
