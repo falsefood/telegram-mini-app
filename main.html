@@ -83,30 +83,30 @@
 
                 updateDebugInfo(`Verifying access for user ID: ${userId}`);
 
-                // Make AJAX request to check access
-                const response = await fetch('https://falsefood.github.io/telegram-mini-app/check_access', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ user_id: userId })
+                // Send data to bot to check access
+                tg.sendData(JSON.stringify({
+                    action: 'check_access',
+                    user_id: userId
+                }));
+
+                // Listen for response from bot
+                tg.onEvent('message', function(event) {
+                    const data = JSON.parse(event.data);
+                    updateDebugInfo('Access check response: ' + JSON.stringify(data, null, 2));
+
+                    if (data.has_access) {
+                        updateDebugInfo('Access verified, showing content...');
+                        contentDiv.innerHTML = `
+                            <h3>Welcome to the Main Page!</h3>
+                            <p>Your subscription is active.</p>
+                            <p>User ID: ${userId}</p>
+                        `;
+                    } else {
+                        updateDebugInfo('Access denied');
+                        showError('Subscription Required');
+                        window.location.href = 'redirect.html';
+                    }
                 });
-
-                const data = await response.json();
-                updateDebugInfo('Access check response: ' + JSON.stringify(data, null, 2));
-
-                if (data.has_access) {
-                    updateDebugInfo('Access verified, showing content...');
-                    contentDiv.innerHTML = `
-                        <h3>Welcome to the Main Page!</h3>
-                        <p>Your subscription is active.</p>
-                        <p>User ID: ${userId}</p>
-                    `;
-                } else {
-                    updateDebugInfo('Access denied');
-                    showError('Subscription Required');
-                    window.location.href = 'redirect.html';
-                }
             } catch (error) {
                 updateDebugInfo('Error: ' + error.message);
                 showError('An error occurred while verifying access');

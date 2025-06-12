@@ -90,29 +90,29 @@
 
                 updateDebugInfo(`Checking access for user ID: ${userId}`);
 
-                // Make AJAX request to check access
-                const response = await fetch('https://falsefood.github.io/telegram-mini-app/check_access', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ user_id: userId })
+                // Send data to bot to check access
+                tg.sendData(JSON.stringify({
+                    action: 'check_access',
+                    user_id: userId
+                }));
+
+                // Listen for response from bot
+                tg.onEvent('message', function(event) {
+                    const data = JSON.parse(event.data);
+                    updateDebugInfo('Access check response: ' + JSON.stringify(data, null, 2));
+
+                    if (data.has_access) {
+                        updateDebugInfo('Access granted, redirecting to main page...');
+                        window.location.href = 'main.html';
+                    } else {
+                        updateDebugInfo('Access denied');
+                        showError('Subscription Required');
+                        statusDiv.innerHTML = `
+                            <p>You need an active subscription to access this content.</p>
+                            <a href="https://t.me/your_bot_username" class="button">Get Subscription</a>
+                        `;
+                    }
                 });
-
-                const data = await response.json();
-                updateDebugInfo('Access check response: ' + JSON.stringify(data, null, 2));
-
-                if (data.has_access) {
-                    updateDebugInfo('Access granted, redirecting to main page...');
-                    window.location.href = 'main.html';
-                } else {
-                    updateDebugInfo('Access denied');
-                    showError('Subscription Required');
-                    statusDiv.innerHTML = `
-                        <p>You need an active subscription to access this content.</p>
-                        <a href="https://t.me/your_bot_username" class="button">Get Subscription</a>
-                    `;
-                }
             } catch (error) {
                 updateDebugInfo('Error: ' + error.message);
                 showError('An error occurred while checking access');

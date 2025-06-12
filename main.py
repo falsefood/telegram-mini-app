@@ -18,6 +18,7 @@ import sqlite3
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from threading import Thread
+import json
 
 # Enable logging
 logging.basicConfig(
@@ -821,6 +822,28 @@ async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return False
     return True
 
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle data from WebApp."""
+    try:
+        data = json.loads(update.effective_message.web_app_data.data)
+        action = data.get('action')
+        user_id = data.get('user_id')
+        
+        if action == 'check_access':
+            is_paid = db.is_subscription_active(user_id)
+            response = {
+                'has_access': is_paid,
+                'user_id': user_id
+            }
+            await update.effective_message.reply_text(
+                json.dumps(response),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Close", callback_data="close")
+                ]])
+            )
+    except Exception as e:
+        logger.error(f"Error handling WebApp data: {e}")
+
 def main() -> None:
     """Start the bot."""
     # Build the application with job queue
@@ -846,6 +869,9 @@ def main() -> None:
     # Add admin command
     application.add_handler(CommandHandler("admin", admin_command))
 
+    # Add WebApp data handler
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
+
     # Schedule the subscription check job (run every minute for testing)
     if application.job_queue:
         application.job_queue.run_repeating(
@@ -860,45 +886,4 @@ def main() -> None:
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    # Initialize Flask app
-    app = Flask(__name__)
-    CORS(app, resources={
-        r"/*": {
-            "origins": [
-                "https://falsefood.github.io",
-                "https://web.telegram.org",
-                "https://telegram.org"
-            ],
-            "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type"]
-        }
-    })
-
-    @app.route('/check_access', methods=['POST', 'OPTIONS'])
-    def check_access():
-        if request.method == 'OPTIONS':
-            return '', 200
-            
-        try:
-            data = request.get_json()
-            user_id = data.get('user_id')
-            
-            if not user_id:
-                return jsonify({'error': 'No user_id provided'}), 400
-                
-            is_paid = db.is_subscription_active(user_id)
-            return jsonify({
-                'has_access': is_paid,
-                'user_id': user_id
-            })
-        except Exception as e:
-            logger.error(f"Error checking access: {e}")
-            return jsonify({'error': str(e)}), 500
-
-    # Start Flask in a separate thread
-    flask_thread = Thread(target=lambda: app.run(host='0.0.0.0', port=5000, ssl_context='adhoc'))
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Start the bot
     main() 
