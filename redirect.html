@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Redirecting...</title>
+    <title>Checking Access...</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -12,6 +12,11 @@
             padding: 20px;
             background: #f0f2f5;
             color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
         }
         .container {
             max-width: 600px;
@@ -20,6 +25,7 @@
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
         }
         .debug-panel {
             margin-top: 20px;
@@ -27,10 +33,15 @@
             background: #f8f9fa;
             border: 1px solid #dee2e6;
             border-radius: 5px;
+            text-align: left;
         }
         .debug-panel pre {
             margin: 0;
             white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
         }
         .button {
             display: inline-block;
@@ -45,13 +56,28 @@
             color: #dc3545;
             margin-top: 10px;
         }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h2>Checking Access...</h2>
+        <div class="loader"></div>
         <div id="status">Please wait while we verify your access...</div>
         <div id="error" class="error"></div>
+        <a href="https://t.me/falsefood_test_bot" id="subscribeBtn" class="button" style="display:none;">Get Subscription</a>
         <div class="debug-panel">
             <h3>Debug Information:</h3>
             <pre id="debug-info"></pre>
@@ -63,63 +89,79 @@
         let debugInfo = document.getElementById('debug-info');
         let statusDiv = document.getElementById('status');
         let errorDiv = document.getElementById('error');
+        let subscribeBtn = document.getElementById('subscribeBtn');
+        let loader = document.querySelector('.loader');
 
         function updateDebugInfo(message) {
             const timestamp = new Date().toLocaleTimeString();
             debugInfo.innerHTML += `[${timestamp}] ${message}\n`;
+            debugInfo.scrollTop = debugInfo.scrollHeight; // Scroll to bottom
         }
 
         function showError(message) {
+            loader.style.display = 'none';
             errorDiv.textContent = message;
             statusDiv.textContent = 'Access Denied';
+            subscribeBtn.style.display = 'inline-block';
         }
 
         async function checkAccess() {
             try {
                 updateDebugInfo('Initializing WebApp...');
+                tg.expand(); // Expand WebApp to full height
+
                 updateDebugInfo('WebApp State: ' + JSON.stringify({
                     version: tg.version,
                     platform: tg.platform,
                     initData: tg.initData
                 }, null, 2));
 
-                // Get user ID from initData
-                const initData = new URLSearchParams(tg.initData);
-                const userData = JSON.parse(decodeURIComponent(initData.get('user')));
-                const userId = userData.id;
+                if (!tg.initDataUnsafe || !tg.initDataUnsafe.user) {
+                    showError('WebApp initialization failed: User data not found.');
+                    return;
+                }
 
+                const userId = tg.initDataUnsafe.user.id;
                 updateDebugInfo(`Checking access for user ID: ${userId}`);
+
+                // Set up event listener for messages from the bot
+                tg.onEvent('message', function(event) {
+                    updateDebugInfo('Received message from bot.');
+                    try {
+                        const data = JSON.parse(event.data);
+                        updateDebugInfo('Parsed bot response: ' + JSON.stringify(data, null, 2));
+
+                        if (data.has_access) {
+                            updateDebugInfo('Access granted, redirecting to main page...');
+                            window.location.href = 'main.html';
+                        } else {
+                            updateDebugInfo('Access denied by bot.');
+                            showError('Subscription Required');
+                            statusDiv.innerHTML = `
+                                <p>You need an active subscription to access this content.</p>
+                                <p>Please go to the bot to subscribe.</p>
+                            `;
+                        }
+                    } catch (parseError) {
+                        updateDebugInfo('Error parsing bot message: ' + parseError.message);
+                        showError('Invalid response from bot.');
+                    }
+                });
 
                 // Send data to bot to check access
                 tg.sendData(JSON.stringify({
                     action: 'check_access',
                     user_id: userId
                 }));
+                updateDebugInfo('Sent access check request to bot.');
 
-                // Listen for response from bot
-                tg.onEvent('message', function(event) {
-                    const data = JSON.parse(event.data);
-                    updateDebugInfo('Access check response: ' + JSON.stringify(data, null, 2));
-
-                    if (data.has_access) {
-                        updateDebugInfo('Access granted, redirecting to main page...');
-                        window.location.href = 'main.html';
-                    } else {
-                        updateDebugInfo('Access denied');
-                        showError('Subscription Required');
-                        statusDiv.innerHTML = `
-                            <p>You need an active subscription to access this content.</p>
-                            <a href="https://t.me/your_bot_username" class="button">Get Subscription</a>
-                        `;
-                    }
-                });
             } catch (error) {
-                updateDebugInfo('Error: ' + error.message);
-                showError('An error occurred while checking access');
+                updateDebugInfo('Error during checkAccess: ' + error.message);
+                showError('An error occurred while checking access.');
             }
         }
 
-        // Initialize when the page loads
+        // Initialize when WebApp is ready
         tg.ready();
         checkAccess();
     </script>

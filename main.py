@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, WebAppInfo, MenuButtonWebApp, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, WebAppInfo, MenuButtonWebApp, InputFile, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -19,6 +19,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from threading import Thread
 import json
+import uuid
 
 # Enable logging
 logging.basicConfig(
@@ -825,9 +826,11 @@ async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle data from WebApp."""
     try:
-        data = json.loads(update.effective_message.web_app_data.data)
+        web_app_data = update.effective_message.web_app_data
+        data = json.loads(web_app_data.data)
         action = data.get('action')
         user_id = data.get('user_id')
+        query_id = web_app_data.query_id  # Get query_id from WebApp data
         
         if action == 'check_access':
             is_paid = db.is_subscription_active(user_id)
@@ -835,12 +838,13 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 'has_access': is_paid,
                 'user_id': user_id
             }
-            await update.effective_message.reply_text(
-                json.dumps(response),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("Close", callback_data="close")
-                ]])
-            )
+            
+            # Send response back to WebApp using answerWebAppQuery
+            await context.bot.answer_web_app_query(query_id, InlineQueryResultArticle(
+                id=str(uuid.uuid4()),  # Unique ID for the result
+                title="Access Check Result",
+                input_message_content=InputTextMessageContent(json.dumps(response))
+            ))
     except Exception as e:
         logger.error(f"Error handling WebApp data: {e}")
 
